@@ -13,6 +13,7 @@ from .agents.bfs import BFSAgent
 from .agents.dfs import  DFSAgent
 from .agents.greedy import GreedyBestFirstAgent
 from .agents.ucs import UCSAgent
+from .agents.dijkstra import DijkstraAgent
 from .config import MazeConfig, RenderConfig
 from .core.env import MazeEnv
 from .core.map_loader import list_map_files
@@ -27,9 +28,10 @@ MAPS_DIR = PROJECT_ROOT / "maps"
 
 
 ALGORITHM_OPTIONS: list[tuple[str, Callable[[], object]]] = [
+    ("Dijkstra", DijkstraAgent),
     ("BFS", BFSAgent),
-    ("DFS", BFSAgent),
-    ("UCS", BFSAgent),
+    ("DFS", DFSAgent),
+    ("UCS", UCSAgent),
     ("Greedy", GreedyBestFirstAgent),
     ("A*", AStarAgent),
     ("Random", lambda: RandomAgent()),
@@ -91,7 +93,7 @@ def run_app() -> None:
     agent = None
     agent_name = "Manual"
     last_agent_step = 0.0
-    agent_step_period = 0.17
+    agent_step_period = 0.04
     last_return_step = 0.0
     return_step_period = 0.11
 
@@ -102,11 +104,7 @@ def run_app() -> None:
         return factory(), name
 
     def maybe_start_return_animation() -> None:
-        nonlocal env
-        if env is None or env.state is None:
-            return
-        if env.state.success and not env.state.returning_home and not env.state.return_complete:
-            env.prepare_return_to_start()
+        return
 
     def start_game(selected_agent=None, selected_name: str = "Manual") -> None:
         nonlocal env, percept, agent, agent_name, mode, last_agent_step, last_return_step
@@ -205,14 +203,19 @@ def run_app() -> None:
                 percept = env.get_percept()
                 last_return_step = now
             elif agent is not None and not env.state.terminal and now - last_agent_step >= agent_step_period:
-                action = agent.act(percept, env.legal_actions)
-                if action not in env.legal_actions:
-                    action = env.legal_actions[-1]
-                transition = env.step(action)
-                percept = transition.percept
-                if transition.done:
-                    maybe_start_return_animation()
-                    last_return_step = now
+                advanced_visualization = False
+                if hasattr(agent, "advance_visualization"):
+                    advanced_visualization = agent.advance_visualization(percept)
+
+                if not advanced_visualization:
+                    action = agent.act(percept, env.legal_actions)
+                    if action not in env.legal_actions:
+                        action = env.legal_actions[-1]
+                    transition = env.step(action)
+                    percept = transition.percept
+                    if transition.done:
+                        maybe_start_return_animation()
+                        last_return_step = now
                 last_agent_step = now
 
             debug_info = None

@@ -73,12 +73,12 @@ class GameRenderer:
         size = self._sprite_size(cell, scale, minimum=6)
         return self.assets.load_surface(f"{folder}/{frame_idx}.png", size=(size, size), trim=True)
 
-    def _draw_wall(self, cell: pygame.Rect) -> None:
+    def _draw_wall(self, cell: pygame.Rect, discovered: bool = False) -> None:
         inset = max(1, min(4, min(cell.width, cell.height) // 3))
         wall = cell.inflate(-2 * inset, -2 * inset)
         pygame.draw.rect(
             self.screen,
-            self.render_cfg.wall_color,
+            self.render_cfg.discovered_wall_color if discovered else self.render_cfg.wall_color,
             wall,
             border_radius=max(3, min(cell.width, cell.height) // 6),
         )
@@ -87,7 +87,7 @@ class GameRenderer:
         if inner.width > 2 and inner.height > 2:
             pygame.draw.rect(
                 self.screen,
-                self.render_cfg.wall_inner_color,
+                self.render_cfg.discovered_wall_inner_color if discovered else self.render_cfg.wall_inner_color,
                 inner,
                 width=max(1, min(cell.width, cell.height) // 12),
                 border_radius=max(2, min(inner.width, inner.height) // 6),
@@ -164,38 +164,175 @@ class GameRenderer:
         rect = surf.get_rect(center=(cell.centerx, cell.centery + max(1, cell.height // 12)))
         self.screen.blit(surf, rect)
 
-    def _draw_board(self, state: WorldState, percept: Percept) -> None:
+    def _draw_frontier_ghost(self, cell: pygame.Rect, row: int, col: int) -> None:
+        """
+            Draw a ghost sprite for a search-frontier cell.
+        """
+        ghost_names = (
+            "ghosts/blinky.png",
+            "ghosts/pinky.png",
+            "ghosts/inky.png",
+            "ghosts/clyde.png",
+            "ghosts/blue_ghost.png",
+        )
+        name = ghost_names[(row * 31 + col * 17) % len(ghost_names)]
+        size = self._sprite_size(cell, 0.62, minimum=5)
+        surf = self.assets.load_surface(name, size=(size, size), trim=True)
+        rect = surf.get_rect(center=(cell.centerx, cell.centery + max(1, cell.height // 12)))
+        self.screen.blit(surf, rect)
+
+    def _draw_current_ghost(self, cell: pygame.Rect) -> None:
+        """Draw the node currently being expanded as Blinky, without overlay."""
+        size = self._sprite_size(cell, 0.72, minimum=6)
+        surf = self.assets.load_surface("ghosts/blinky.png", size=(size, size), trim=True)
+        rect = surf.get_rect(center=(cell.centerx, cell.centery + max(1, cell.height // 12)))
+        self.screen.blit(surf, rect)
+
+    def _draw_translucent_cell(self, cell: pygame.Rect, color: tuple[int, int, int, int]) -> None:
+        inset = max(1, min(3, min(cell.width, cell.height) // 5))
+        rect = cell.inflate(-2 * inset, -2 * inset)
+        overlay = pygame.Surface((max(2, rect.width), max(2, rect.height)), pygame.SRCALPHA)
+        pygame.draw.rect(
+            overlay,
+            color,
+            overlay.get_rect(),
+            border_radius=max(2, min(rect.width, rect.height) // 4),
+        )
+        self.screen.blit(overlay, rect.topleft)
+
+    def _debug_positions(self, value: object) -> list[tuple[int, int]]:
+        if not isinstance(value, list):
+            return []
+        out: list[tuple[int, int]] = []
+        for item in value:
+            if isinstance(item, tuple) and len(item) == 2:
+                out.append((int(item[0]), int(item[1])))
+            elif isinstance(item, list) and len(item) == 2:
+                out.append((int(item[0]), int(item[1])))
+        return out
+
+    def _debug_position(self, value: object) -> tuple[int, int] | None:
+        if isinstance(value, tuple) and len(value) == 2:
+            return (int(value[0]), int(value[1]))
+        if isinstance(value, list) and len(value) == 2:
+            return (int(value[0]), int(value[1]))
+        return None
+
+    def _search_revealed_cells(
+        self,
+        state: WorldState,
+        agent_debug: dict[str, object] | None,
+    ) -> set[tuple[int, int]]:
+        """Cells that should be visually known during search animation."""
+        revealed = {state.start.as_tuple(), state.exit.as_tuple(), state.pacman.as_tuple()}
+        if not agent_debug:
+            return revealed
+
+        for key_name in ("expanded_cells", "frontier_cells", "final_path"):
+            revealed.update(self._debug_positions(agent_debug.get(key_name, [])))
+        current = self._debug_position(agent_debug.get("current"))
+        if current is not None:
+            revealed.add(current)
+
+        wall_reveals: set[tuple[int, int]] = set()
+        for r, c in tuple(revealed):
+            for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < state.rows and 0 <= nc < state.cols and state.true_grid[nr][nc] == WALL:
+                    wall_reveals.add((nr, nc))
+
+        revealed.update(wall_reveals)
+        return revealed
+
+    def _search_discovered_walls(
+        self,
+        state: WorldState,
+        agent_debug: dict[str, object] | None,
+    ) -> set[tuple[int, int]]:
+        if not agent_debug:
+            return set()
+
+        revealed = self._search_revealed_cells(state, agent_debug)
+        return {pos for pos in revealed if state.true_grid[pos[0]][pos[1]] == WALL}
+
+    def _use_search_exploration_view(self, agent_debug: dict[str, object] | None) -> bool:
+        if self.show_full_world or not agent_debug:
+            return False
+        phase = agent_debug.get("phase")
+        return phase in {"search_started", "search", "path_ready", "execute", "done"}
+
+    def _draw_search_overlays(self, state: WorldState, agent_debug: dict[str, object] | None) -> None:
+        if not agent_debug:
+            return
+
+        rows, cols = state.rows, state.cols
+
+        frontier = self._debug_positions(agent_debug.get("frontier_cells", []))
+        final_path = self._debug_positions(agent_debug.get("final_path", []))
+
+        for r, c in frontier:
+            if 0 <= r < rows and 0 <= c < cols:
+                self._draw_frontier_ghost(self.cell_rect(rows, cols, r, c), r, c)
+
+        current = self._debug_position(agent_debug.get("current"))
+        if current is not None:
+            r, c = current
+            if 0 <= r < rows and 0 <= c < cols:
+                self._draw_current_ghost(self.cell_rect(rows, cols, r, c))
+
+        if final_path:
+            centers = []
+            for r, c in final_path:
+                if 0 <= r < rows and 0 <= c < cols:
+                    centers.append(self.cell_rect(rows, cols, r, c).center)
+            if len(centers) >= 2:
+                first_cell = self.cell_rect(rows, cols, final_path[0][0], final_path[0][1])
+                line_width = max(2, min(first_cell.width, first_cell.height) // 5)
+                pygame.draw.lines(self.screen, self.render_cfg.search_path_color, False, centers, line_width)
+
+    def _draw_board(self, state: WorldState, percept: Percept, agent_debug: dict[str, object] | None = None) -> None:
         board = self.board_rect()
         pygame.draw.rect(self.screen, self.render_cfg.board_bg_color, board, border_radius=18)
         pygame.draw.rect(self.screen, self.render_cfg.grid_line_color, board, width=2, border_radius=18)
 
-        visible_grid = state.true_grid if self.show_full_world else percept.known_grid
+        search_view = self._use_search_exploration_view(agent_debug)
+        search_revealed = self._search_revealed_cells(state, agent_debug) if search_view else set()
+        search_discovered_walls = self._search_discovered_walls(state, agent_debug) if search_view else set()
+        visible_grid = state.true_grid if (self.show_full_world or search_view) else percept.known_grid
         rows, cols = state.rows, state.cols
         cell_radius = max(1, min(6, int(min(board.width / cols, board.height / rows) // 3)))
         current_pos = state.pacman.as_tuple()
+        start_pos = state.start.as_tuple()
+        exit_pos = state.exit.as_tuple()
         for r in range(rows):
             for c in range(cols):
                 cell = self.cell_rect(rows, cols, r, c)
                 cell_value = visible_grid[r][c]
                 pos = (r, c)
-                if not self.show_full_world and cell_value == UNKNOWN:
+                cell_hidden_by_search = search_view and pos not in search_revealed
+
+                if cell_hidden_by_search:
+                    self._draw_hidden(cell)
+                elif not self.show_full_world and not search_view and cell_value == UNKNOWN:
                     self._draw_hidden(cell)
                 elif cell_value == WALL:
-                    self._draw_wall(cell)
+                    self._draw_wall(cell, discovered=pos in search_discovered_walls)
                 else:
                     self._draw_free_cell(cell)
                     if pos in state.visited_not_on_shortest_path and pos != current_pos:
                         self._draw_visited_overlay(cell)
-                    elif pos in state.visited and pos not in state.visited_shortest_path and pos != current_pos and pos != state.exit.as_tuple():
+                    elif pos in state.visited and pos not in state.visited_shortest_path and pos != current_pos and pos != exit_pos:
                         self._draw_dot(cell)
                     if pos in state.visited_shortest_path:
                         self._draw_path_overlay(cell)
-                    if state.start.as_tuple() == pos and pos != current_pos:
+                    if start_pos == pos and pos != current_pos:
                         self._draw_start(cell)
-                    exit_known_or_reveal = self.show_full_world or percept.exit_visible
-                    if exit_known_or_reveal and state.exit.as_tuple() == pos:
+                    exit_known_or_reveal = self.show_full_world or percept.exit_visible or search_view
+                    if exit_known_or_reveal and exit_pos == pos:
                         self._draw_exit(cell)
                 pygame.draw.rect(self.screen, self.render_cfg.grid_line_color, cell, width=1, border_radius=cell_radius)
+
+        self._draw_search_overlays(state, agent_debug)
 
         now = time.time()
         pacman_cell = self.cell_rect(rows, cols, state.pacman.row, state.pacman.col)
@@ -247,14 +384,15 @@ class GameRenderer:
             y += 10
             draw_text(self.screen, self.font_title, "Search", self.render_cfg.accent_color, x, y)
             y += 28
-            target = agent_debug.get("target", "-")
+            current = agent_debug.get("current", "-")
             debug_lines = [
                 f"Algo: {agent_debug.get('algorithm', '-')}",
-                f"Target: {target}",
-                f"Frontiers: {agent_debug.get('frontier_count', 0)}",
+                f"Phase: {agent_debug.get('phase', '-')}",
+                f"Current: {current}",
+                f"Frontier: {agent_debug.get('frontier_count', 0)}",
                 f"Expanded: {agent_debug.get('expanded', 0)}",
-                f"Plan: {agent_debug.get('plan_length', 0)}",
-                f"Path found: {'yes' if agent_debug.get('found', False) else 'no'}",
+                f"Path: {agent_debug.get('path_length', 0)}",
+                f"Found: {'yes' if agent_debug.get('found', False) else 'no'}",
             ]
             for text in debug_lines:
                 draw_text(self.screen, self.font_small, text, self.render_cfg.text_color, x, y)
@@ -283,7 +421,7 @@ class GameRenderer:
 
     def render(self, state: WorldState, percept: Percept, agent_name: str, agent_debug: dict[str, object] | None = None) -> None:
         self.screen.fill(self.render_cfg.background_color)
-        self._draw_board(state, percept)
+        self._draw_board(state, percept, agent_debug)
         self._draw_hud(state, percept, agent_name, agent_debug)
 
 

@@ -8,8 +8,17 @@ from pacman_labyrinth.search.algorithms import dijkstra_search
 from pacman_labyrinth.search.problems import GridPlanningProblem
 
 
-def test_partial_observation_at_reset():
+def test_full_observation_at_reset_by_default():
     env = MazeEnv(MazeConfig(map_path=Path("maps/maze_10x10.txt")))
+    percept = env.reset()
+    total_cells = len(percept.known_grid) * len(percept.known_grid[0])
+    assert percept.known_count == total_cells
+    assert percept.exit_visible is True
+    assert percept.goal_position == env.state.exit
+
+
+def test_partial_observation_can_still_be_enabled():
+    env = MazeEnv(MazeConfig(map_path=Path("maps/maze_10x10.txt"), full_observability=False, known_goal=False))
     percept = env.reset()
     total_cells = len(percept.known_grid) * len(percept.known_grid[0])
     assert 0 < percept.known_count < total_cells
@@ -39,3 +48,4 @@ def test_dijkstra_search_on_known_grid():
     problem = GridPlanningProblem(known_grid, maze.start, maze.exit)
     dijkstra = dijkstra_search(problem)
     assert dijkstra.found
+    assert dijkstra.trace

@@ -57,7 +57,7 @@ class Dropdown:
             self._option_rects = [
                 pygame.Rect(
                     self.rect.x +  365,
-                    self.rect.bottom - 55 + self.option_gap + idx * (self.rect.height + self.option_gap),
+                    self.rect.bottom - 85 + self.option_gap + idx * (self.rect.height + self.option_gap),
                     self.rect.width,
                     self.rect.height,
                 )

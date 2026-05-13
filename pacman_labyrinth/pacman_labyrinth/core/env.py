@@ -11,7 +11,13 @@ from .models import EXIT, UNKNOWN, WALL, MazeMap, Percept, Position, Transition,
 
 class MazeEnv:
     """
-        Grid maze where the agent reveals the map incrementally while moving.
+    Grid maze environment.
+
+    Default activity mode:
+    - the full map is known from reset;
+    - the start position is known;
+    - the goal/exit position is known;
+    - the agent still moves one cell at a time
     """
 
     def __init__(self, config: MazeConfig | None = None):
@@ -32,9 +38,16 @@ class MazeEnv:
             maze = load_maze(path)
 
         self._maze_map = maze
-        known = [[UNKNOWN for _ in range(maze.cols)] for _ in range(maze.rows)]
+        true_grid = [row[:] for row in maze.grid]
+        true_grid[maze.exit.row][maze.exit.col] = EXIT
+
+        if self.config.full_observability:
+            known = [row[:] for row in true_grid]
+        else:
+            known = [[UNKNOWN for _ in range(maze.cols)] for _ in range(maze.rows)]
+
         self.state = WorldState(
-            true_grid=[row[:] for row in maze.grid],
+            true_grid=true_grid,
             known_grid=known,
             pacman=maze.start,
             pacman_facing=Direction.RIGHT,
@@ -43,8 +56,14 @@ class MazeEnv:
             map_name=maze.name,
         )
         self.state.visited.add(maze.start.as_tuple())
+        self.state.trajectory.append(maze.start)
         self._last_bump = False
-        self._reveal_around(self.state.pacman)
+
+        if not self.config.full_observability:
+            self._reveal_around(self.state.pacman)
+        else:
+            self._reveal_cell(self.state.exit)
+
         return self.get_percept()
 
     @property
@@ -138,7 +157,6 @@ class MazeEnv:
         return path_rev
 
     def prepare_return_to_start(self) -> list[Position]:
-        """Compute the shortest return path over visited cells and store highlights."""
         if self.state is None:
             raise RuntimeError("Environment not reset.")
 
@@ -174,15 +192,20 @@ class MazeEnv:
     def get_percept(self) -> Percept:
         if self.state is None:
             raise RuntimeError("Environment not reset.")
-        exit_visible = self.state.known_grid[self.state.exit.row][self.state.exit.col] == EXIT
+        exit_visible = self.config.known_goal or self.state.known_grid[self.state.exit.row][self.state.exit.col] == EXIT
+        exit_position = self.state.exit if exit_visible else None
         return Percept(
             position=self.state.pacman,
             facing=self.state.pacman_facing,
             bump=self._last_bump,
             exit_visible=exit_visible,
-            exit_position=self.state.exit if exit_visible else None,
+            exit_position=exit_position,
+            start_position=self.state.start,
+            goal_position=self.state.exit,
             known_grid=tuple(tuple(row) for row in self.state.known_grid),
             visited=frozenset(self.state.visited),
+            trajectory=tuple(pos.as_tuple() for pos in self.state.trajectory),
+            actions_taken=tuple(action.name for action in self.state.actions_taken),
             step_count=self.state.step_count,
             score=self.state.score,
             success=self.state.success,
@@ -221,7 +244,10 @@ class MazeEnv:
             else:
                 self.state.pacman = target
                 self.state.visited.add(target.as_tuple())
-                self._reveal_around(target)
+                self.state.trajectory.append(target)
+                self.state.actions_taken.append(action)
+                if not self.config.full_observability:
+                    self._reveal_around(target)
                 if target == self.state.exit:
                     self.state.terminal = True
                     self.state.success = True
@@ -229,6 +255,7 @@ class MazeEnv:
 
         elif action == Action.WAIT:
             reward += self.config.wait_cost
+            self.state.actions_taken.append(action)
 
         self.state.score += reward
         percept = self.get_percept()
@@ -236,6 +263,9 @@ class MazeEnv:
             "map_name": self.state.map_name,
             "known_count": percept.known_count,
             "success": self.state.success,
+            "steps": self.state.step_count,
+            "trajectory": percept.trajectory,
+            "actions_taken": percept.actions_taken,
         }
         return Transition(
             percept=percept,

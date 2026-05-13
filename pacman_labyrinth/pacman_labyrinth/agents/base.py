@@ -7,11 +7,11 @@ from ..core.models import Percept
 
 
 class BaseAgent(ABC):
-
     name: str = "BaseAgent"
 
-    def __init__(self, algorithm):
-        name = algorithm
+    def __init__(self, algorithm: str = "base"):
+        self.algorithm = algorithm
+        self.name = algorithm
 
     def reset(self) -> None:
         return None

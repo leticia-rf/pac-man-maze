@@ -21,8 +21,8 @@ from pacman_labyrinth.core.env import MazeEnv
 
 AGENTS = {
     "bfs": BFSAgent,
-    "dfs": BFSAgent,
-    "ucs": BFSAgent,
+    "dfs": DFSAgent,
+    "ucs": UCSAgent,
     "greedy": GreedyBestFirstAgent,
     "astar": AStarAgent,
     "random": RandomAgent,
@@ -60,6 +60,8 @@ def main() -> None:
     print(f"score={env.state.score:.2f}")
     print(f"reward_sum={total_reward:.2f}")
     print(f"success={env.state.success}")
+    print(f"trajectory={[pos.as_tuple() for pos in env.state.trajectory]}")
+    print(f"actions_taken={[action.name for action in env.state.actions_taken]}")
     if hasattr(agent, "last_debug"):
         print(f"search_debug={asdict(agent.last_debug)}")
 

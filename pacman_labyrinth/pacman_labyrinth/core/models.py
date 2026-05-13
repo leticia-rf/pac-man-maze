@@ -51,8 +51,12 @@ class Percept:
     bump: bool
     exit_visible: bool
     exit_position: Position | None
+    start_position: Position
+    goal_position: Position
     known_grid: tuple[tuple[int, ...], ...]
     visited: frozenset[tuple[int, int]]
+    trajectory: tuple[tuple[int, int], ...]
+    actions_taken: tuple[str, ...]
     step_count: int
     score: float
     success: bool
@@ -65,7 +69,11 @@ class Percept:
             "bump": self.bump,
             "exit_visible": self.exit_visible,
             "exit_position": None if self.exit_position is None else self.exit_position.as_tuple(),
+            "start_position": self.start_position.as_tuple(),
+            "goal_position": self.goal_position.as_tuple(),
             "visited": sorted(self.visited),
+            "trajectory": list(self.trajectory),
+            "actions_taken": list(self.actions_taken),
             "step_count": self.step_count,
             "score": self.score,
             "success": self.success,
@@ -87,6 +95,8 @@ class WorldState:
     exit: Position
     map_name: str
     visited: set[tuple[int, int]] = field(default_factory=set)
+    trajectory: list[Position] = field(default_factory=list)
+    actions_taken: list[Action] = field(default_factory=list)
     terminal: bool = False
     success: bool = False
     step_count: int = 0

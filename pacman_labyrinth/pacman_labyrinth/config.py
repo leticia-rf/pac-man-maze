@@ -7,11 +7,13 @@ from pathlib import Path
 @dataclass(slots=True)
 class MazeConfig:
     map_path: str | Path | None = None
+    full_observability: bool = True
+    known_goal: bool = True
     reveal_radius: int = 1
     step_cost: float = -1.0
     bump_cost: float = -1.0
     wait_cost: float = -0.25
-    success_reward: float = 100.0
+    success_reward: float = 1000.0
     reveal_full_on_terminal: bool = True
 
 
@@ -30,6 +32,8 @@ class RenderConfig:
     hidden_outline_color: tuple[int, int, int] = (54, 54, 78)
     wall_color: tuple[int, int, int] = (26, 63, 158)
     wall_inner_color: tuple[int, int, int] = (45, 98, 220)
+    discovered_wall_color: tuple[int, int, int] = (104, 70, 188)
+    discovered_wall_inner_color: tuple[int, int, int] = (155, 116, 244)
     grid_line_color: tuple[int, int, int] = (38, 40, 60)
     text_color: tuple[int, int, int] = (240, 240, 245)
     accent_color: tuple[int, int, int] = (255, 208, 76)
@@ -40,3 +44,8 @@ class RenderConfig:
     shortest_path_glow_color: tuple[int, int, int, int] = (255, 214, 64, 110)
     visited_off_path_color: tuple[int, int, int] = (92, 188, 255)
     visited_off_path_glow_color: tuple[int, int, int, int] = (92, 188, 255, 62)
+    search_expanded_color: tuple[int, int, int, int] = (66, 165, 245, 92)
+    search_frontier_color: tuple[int, int, int, int] = (255, 214, 64, 118)
+    search_current_color: tuple[int, int, int, int] = (255, 72, 72, 168)
+    search_path_color: tuple[int, int, int] = (76, 217, 100)
+    search_path_glow_color: tuple[int, int, int, int] = (76, 217, 100, 92)
