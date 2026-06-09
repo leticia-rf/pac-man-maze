@@ -15,6 +15,7 @@ class BFSAgent(SearchAgentBase):
         start_key = problem.start.as_tuple()
 
         # dicionário para a reconstrução do caminho
+        # e também funciona como o conjunto de nós visitados
         parents = {start_key: (None, None)}
 
         # enquanto fronteira não vazia
@@ -31,7 +32,7 @@ class BFSAgent(SearchAgentBase):
             for action, nxt, _ in problem.successors(cur):
                 nxt_key = nxt.as_tuple()
 
-                # só adiciona se não está no histórico de pais, ou seja, se não foi explorado
+                # só adiciona se não está no histórico de pais, ou seja, se não foi descoberto
                 if nxt_key not in parents:
                     parents[nxt_key] = (cur_key, action)
                     frontier.push(nxt)
