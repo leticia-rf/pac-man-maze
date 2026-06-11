@@ -30,7 +30,7 @@ class UCSAgent(SearchAgentBase):
 
             if problem.is_goal(cur):
                 actions, path = reconstruct_path(parents, cur)
-                return problem.solution(actions, path, float(len(actions)), True)
+                return problem.solution(actions, path, cost, True)
 
             for action, nxt, step_cost in problem.successors(cur):
                 nxt_key = nxt.as_tuple()
